@@ -1,73 +1,32 @@
-# React + TypeScript + Vite
+# Geofleet Simulator: Visualizing Distributed System
+This app is built to visualized the underlying mechanism of Geofleet (just exactly like UBER, nothing new here). I done it to prove I can do it, that's all.
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## 🧠 The Concept
+This is a System Design Playground. It simulates a high-concurrency ride-hailing backend (just exactly like UBER, nonetheless). You will the some dots on the screen, as "blue" for cars, "green" for users, and "yellow" for happening-ride.
 
-Currently, two official plugins are available:
+## 🛠️ Tech Stack
+- Frontend: React 18 + TypeScript (Strict Mode)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Build Tool: Vite (Lightning fast HMR)
 
-## React Compiler
+- Styling: Tailwind CSS v4 (Modern utility-first CSS)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Mapping: Leaflet.js (Custom dark-mode tiles)
 
-## Expanding the ESLint configuration
+- Icons: Lucide-React
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## 🕹️ What to do?
+Play the games, scroll the bar, enjoy the ride. P/s: if you find any bugs, love love love to received feedback from you by opening any pull request here. Thanks in advance.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+1. The 100k Challenge: Slide the concurrent requests to 100,000. Watch the map dynamically expand from District 1 to the Greater HCMC area (Thu Duc & Binh Duong) to handle the simulated load.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+2. The "Panic" Button: Hit Trigger Surge. I’ve implemented a ramp-up algorithm that simulates a sudden spike in demand.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+3. Infrastructure Toggles: Turn off backend nodes one by one. In a real environment, this would increase P99 latency—here, you can track the status in the live System Log.
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+4. Network Simulation: Use the sliders to inject artificial latency into the Kafka bus or Database replication. The taskbar at the bottom reflects these "bottlenecks" instantly.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Note
+You would need Geofleet backend for this to work. Find more here.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Vielen Dank!

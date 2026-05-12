@@ -36,3 +36,18 @@ export interface Activity {
   message: string;
   time: string;
 }
+
+// NEW: Rider interface
+export interface Rider {
+  id: number;
+  lat: number;
+  lng: number;
+}
+
+export interface SimulationState {
+  concurrentRequests: number;
+  isSurging: boolean;
+  nodes: { id: number; active: boolean }[];
+  latencyKafka: number;
+  latencyDB: number;
+}

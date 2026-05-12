@@ -1,193 +1,163 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
-import type { Coordinate, Car } from "../types";
+import type { Car, Rider } from "../types";
 
-const DARMSTADT_CENTER: [number, number] = [49.8874, 8.6462];
-const BOUNDS = { latMin: 49.845, latMax: 49.925, lngMin: 8.59, lngMax: 8.72 };
+const HCMC_CENTER: [number, number] = [10.7769, 106.7009];
+
+// Expanded Bounds for different load levels
+const GET_BOUNDS = (requests: number) => {
+  if (requests < 20000)
+    return {
+      zoom: 14,
+      label: "District 1",
+      latMin: 10.76,
+      latMax: 10.79,
+      lngMin: 106.68,
+      lngMax: 106.71,
+    };
+  if (requests < 50000)
+    return {
+      zoom: 12,
+      label: "D1, D3, D7, D4",
+      latMin: 10.72,
+      latMax: 10.82,
+      lngMin: 106.65,
+      lngMax: 106.75,
+    };
+  return {
+    zoom: 10,
+    label: "Greater HCMC (Thu Duc, Binh Duong)",
+    latMin: 10.65,
+    latMax: 10.95,
+    lngMin: 106.5,
+    lngMax: 107.0,
+  };
+};
 
 interface MapProps {
-  mapMode: "navigate" | "set-pickup" | "set-dropoff";
-  onLocationSelect: (loc: Coordinate) => void;
-  pickup: Coordinate | null;
-  dropoff: Coordinate | null;
+  concurrentRequests: number;
+  simulationKey: number;
 }
 
 export default function MapWrapper({
-  mapMode,
-  onLocationSelect,
-  pickup,
-  dropoff,
+  concurrentRequests,
+  simulationKey,
 }: MapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletInstance = useRef<L.Map | null>(null);
-  const markersRef = useRef<{
-    pickup?: L.Marker;
-    dropoff?: L.Marker;
-    route?: L.Polyline;
-  }>({});
   const carsRef = useRef<{ data: Car[]; markers: L.Marker[] }>({
     data: [],
     markers: [],
   });
+  const ridersRef = useRef<{ data: Rider[]; markers: L.Marker[] }>({
+    data: [],
+    markers: [],
+  });
+  const animationInterval = useRef<number | null>(null);
 
   useEffect(() => {
     if (!mapRef.current || leafletInstance.current) return;
-
-    // 1. Initialize Map
     const map = L.map(mapRef.current, {
-      center: DARMSTADT_CENTER,
-      zoom: 14,
-      zoomControl: false, // Move to bottom right later if needed
+      center: HCMC_CENTER,
+      zoom: 13,
+      zoomControl: false,
     });
-
-    L.control.zoom({ position: "bottomright" }).addTo(map);
-
     L.tileLayer(
       "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
       {
-        maxZoom: 19,
         subdomains: "abcd",
-        attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+        attribution: "&copy; CARTO",
       },
     ).addTo(map);
-
     leafletInstance.current = map;
-
-    // 2. Initialize Car Simulation
-    const types = ["economy", "comfort", "premium"] as const;
-    const initialCars: Car[] = Array.from({ length: 22 }).map((_, i) => ({
-      id: i,
-      type: types[i % 3], // Simplified distribution
-      lat: BOUNDS.latMin + Math.random() * (BOUNDS.latMax - BOUNDS.latMin),
-      lng: BOUNDS.lngMin + Math.random() * (BOUNDS.lngMax - BOUNDS.lngMin),
-      bearing: Math.random() * 360,
-      speed: 0.00003 + Math.random() * 0.00005,
-      turnRate: (Math.random() - 0.5) * 0.3,
-    }));
-
-    const carMarkers = initialCars.map((car) =>
-      L.marker([car.lat, car.lng], {
-        icon: L.divIcon({
-          className: "",
-          html: `<div class="car-marker ${car.type}"></div>`,
-          iconSize: [12, 12],
-          iconAnchor: [6, 6],
-        }),
-        interactive: false,
-      }).addTo(map),
-    );
-
-    carsRef.current = { data: initialCars, markers: carMarkers };
-
-    const interval = setInterval(() => {
-      carsRef.current.data.forEach((car, i) => {
-        if (Math.random() < 0.02) car.bearing += (Math.random() - 0.5) * 90;
-        car.bearing += car.turnRate * (Math.random() - 0.5);
-        const rad = (car.bearing * Math.PI) / 180;
-        car.lat += Math.cos(rad) * car.speed;
-        car.lng += Math.sin(rad) * car.speed;
-
-        if (car.lat < BOUNDS.latMin || car.lat > BOUNDS.latMax) {
-          car.bearing = 180 - car.bearing;
-          car.lat = Math.max(BOUNDS.latMin, Math.min(BOUNDS.latMax, car.lat));
-        }
-        if (car.lng < BOUNDS.lngMin || car.lng > BOUNDS.lngMax) {
-          car.bearing = -car.bearing;
-          car.lng = Math.max(BOUNDS.lngMin, Math.min(BOUNDS.lngMax, car.lng));
-        }
-
-        carsRef.current.markers[i].setLatLng([car.lat, car.lng]);
-      });
-    }, 150);
-
     return () => {
-      clearInterval(interval);
       map.remove();
       leafletInstance.current = null;
     };
   }, []);
 
-  // Handle Map Mode Clicks
+  // Effect to handle dynamic zooming/expansion
   useEffect(() => {
     const map = leafletInstance.current;
     if (!map) return;
+    const { zoom } = GET_BOUNDS(concurrentRequests);
+    map.setZoom(zoom, { animate: true });
+  }, [concurrentRequests]);
 
-    const clickHandler = (e: L.LeafletMouseEvent) => {
-      if (mapMode !== "navigate") {
-        onLocationSelect({ lat: e.latlng.lat, lng: e.latlng.lng });
-      }
+  useEffect(() => {
+    const map = leafletInstance.current;
+    if (!map || simulationKey === 0) return;
+
+    if (animationInterval.current) clearInterval(animationInterval.current);
+    carsRef.current.markers.forEach((m) => map.removeLayer(m));
+    ridersRef.current.markers.forEach((m) => map.removeLayer(m));
+
+    const bounds = GET_BOUNDS(concurrentRequests);
+    const displayCount = Math.min(250, Math.ceil(concurrentRequests / 400));
+
+    const newRiders: Rider[] = Array.from({ length: displayCount }).map(
+      (_, i) => ({
+        id: i,
+        lat: bounds.latMin + Math.random() * (bounds.latMax - bounds.latMin),
+        lng: bounds.lngMin + Math.random() * (bounds.lngMax - bounds.lngMin),
+      }),
+    );
+
+    ridersRef.current = {
+      data: newRiders,
+      markers: newRiders.map((r) =>
+        L.marker([r.lat, r.lng], {
+          icon: L.divIcon({
+            className: "",
+            html: `<div class="rider-marker"></div>`,
+            iconSize: [8, 8],
+          }),
+        }).addTo(map),
+      ),
     };
 
-    map.getContainer().style.cursor = mapMode !== "navigate" ? "crosshair" : "";
-    map.on("click", clickHandler);
+    const newCars: Car[] = Array.from({
+      length: Math.ceil(displayCount * 0.4),
+    }).map((_, i) => ({
+      id: i,
+      type: "comfort",
+      lat: bounds.latMin + Math.random() * (bounds.latMax - bounds.latMin),
+      lng: bounds.lngMin + Math.random() * (bounds.lngMax - bounds.lngMin),
+      bearing: Math.random() * 360,
+      speed: 0.0005, // Adjusted speed for larger map
+      turnRate: (Math.random() - 0.5) * 0.2,
+    }));
+
+    carsRef.current = {
+      data: newCars,
+      markers: newCars.map((c) =>
+        L.marker([c.lat, c.lng], {
+          icon: L.divIcon({
+            className: "",
+            html: `<div class="car-marker comfort"></div>`,
+            iconSize: [10, 10],
+          }),
+        }).addTo(map),
+      ),
+    };
+
+    animationInterval.current = setInterval(() => {
+      carsRef.current.data.forEach((car, i) => {
+        const rad = (car.bearing * Math.PI) / 180;
+        car.lat += Math.cos(rad) * car.speed;
+        car.lng += Math.sin(rad) * car.speed;
+        if (car.lat < bounds.latMin || car.lat > bounds.latMax)
+          car.bearing = 180 - car.bearing;
+        if (car.lng < bounds.lngMin || car.lng > bounds.lngMax)
+          car.bearing = -car.bearing;
+        carsRef.current.markers[i].setLatLng([car.lat, car.lng]);
+      });
+    }, 150);
+
     return () => {
-      map.off("click", clickHandler);
+      if (animationInterval.current) clearInterval(animationInterval.current);
     };
-  }, [mapMode, onLocationSelect]);
-
-  // Sync Pickup/Dropoff/Route markers when props change
-  useEffect(() => {
-    const map = leafletInstance.current;
-    const mRef = markersRef.current;
-    if (!map) return;
-
-    if (pickup) {
-      if (!mRef.pickup) {
-        mRef.pickup = L.marker([pickup.lat, pickup.lng], {
-          icon: L.divIcon({
-            className: "",
-            html: '<div class="pickup-marker"></div>',
-            iconSize: [20, 20],
-            iconAnchor: [10, 10],
-          }),
-        }).addTo(map);
-      } else {
-        mRef.pickup.setLatLng([pickup.lat, pickup.lng]);
-      }
-    } else if (mRef.pickup) {
-      map.removeLayer(mRef.pickup);
-      delete mRef.pickup;
-    }
-
-    if (dropoff) {
-      if (!mRef.dropoff) {
-        mRef.dropoff = L.marker([dropoff.lat, dropoff.lng], {
-          icon: L.divIcon({
-            className: "",
-            html: '<div class="dropoff-marker"></div>',
-            iconSize: [20, 20],
-            iconAnchor: [10, 10],
-          }),
-        }).addTo(map);
-      } else {
-        mRef.dropoff.setLatLng([dropoff.lat, dropoff.lng]);
-      }
-    } else if (mRef.dropoff) {
-      map.removeLayer(mRef.dropoff);
-      delete mRef.dropoff;
-    }
-
-    if (pickup && dropoff) {
-      if (mRef.route) map.removeLayer(mRef.route);
-      const curvedLat = (pickup.lat + dropoff.lat) / 2 + 0.003;
-      mRef.route = L.polyline(
-        [
-          [pickup.lat, pickup.lng],
-          [curvedLat, (pickup.lng + dropoff.lng) / 2],
-          [dropoff.lat, dropoff.lng],
-        ],
-        {
-          color: "#00d4aa",
-          weight: 3,
-          opacity: 0.6,
-          dashArray: "8, 8",
-        },
-      ).addTo(map);
-    } else if (mRef.route) {
-      map.removeLayer(mRef.route);
-      delete mRef.route;
-    }
-  }, [pickup, dropoff]);
+  }, [simulationKey]);
 
   return <div ref={mapRef} className="w-full h-full absolute inset-0 z-0" />;
 }

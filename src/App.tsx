@@ -1,195 +1,231 @@
-import { useState, useEffect } from 'react';
-import { ChevronRight, ChevronLeft, MapPin, MapPinOff, Route, Crosshair, X, Car as CarIcon, Diamond, Zap, Clock, Send, Info } from 'lucide-react';
-import MapWrapper from './components/MapWrapper';
-import type { Coordinate, Benchmarks, Activity, RideStatus } from './types';
-
-// Utility helper for random walks
-const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(max, val));
+import { useState, useEffect, useRef } from "react";
+import {
+  Zap,
+  Server,
+  Wifi,
+  Play,
+  Flame,
+  StopCircle,
+  HardDrive,
+  Terminal,
+} from "lucide-react";
+import MapWrapper from "./components/MapWrapper";
+import type { Activity as LogActivity } from "./types";
 
 export default function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [mapMode, setMapMode] = useState<'navigate' | 'set-pickup' | 'set-dropoff'>('navigate');
-  
-  // Booking State
-  // const [passengers, setPassengers] = useState(1);
-  const [vehicleType, setVehicleType] = useState<'economy' | 'comfort' | 'premium'>('economy');
-  const [pickup, setPickup] = useState<Coordinate | null>(null);
-  const [dropoff, setDropoff] = useState<Coordinate | null>(null);
-  const [isBooking, setIsBooking] = useState(false);
+  const [requests, setRequests] = useState(5000);
+  const [isSurging, setIsSurging] = useState(false);
+  const [nodes, setNodes] = useState(
+    [1, 2, 3, 4, 5].map((id) => ({ id, active: true })),
+  );
+  const [latencyKafka, setLatencyKafka] = useState(20);
+  const [latencyDB, setLatencyDB] = useState(15);
+  const [simulationKey, setSimulationKey] = useState(0);
+  const [logs, setLogs] = useState<LogActivity[]>([]);
 
-  // System State
-  const [activityFeed, setActivityFeed] = useState<Activity[]>([]);
-  const [benchmarks, setBenchmarks] = useState<Benchmarks>({
-    activeRides: 142, availableDrivers: 67, avgResponseTime: 287,
-    throughput: 18.4, p99Latency: 1247, errorRate: 0.23, cpuLoad: 54, memoryUsage: 68
-  });
+  const logEndRef = useRef<HTMLDivElement>(null);
+  const surgeInterval = useRef<number | null>(null);
 
-  // Simulator Effect (Benchmarks)
+  const addLog = (message: string) => {
+    const newLog = {
+      id: Math.random().toString(36).substr(2, 9),
+      type: "ride-requested" as any,
+      message,
+      time: new Date().toLocaleTimeString("en-GB", { hour12: false }),
+    };
+    setLogs((prev) => [...prev, newLog].slice(-50)); // Keep last 50 logs
+  };
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      setBenchmarks(prev => ({
-        activeRides: clamp(prev.activeRides + (Math.random() - 0.48) * 8, 80, 250),
-        availableDrivers: clamp(prev.availableDrivers + (Math.random() - 0.5) * 5, 25, 120),
-        avgResponseTime: clamp(prev.avgResponseTime + (Math.random() - 0.5) * 30, 120, 600),
-        throughput: clamp(prev.throughput + (Math.random() - 0.5) * 2, 5, 35),
-        p99Latency: clamp(prev.p99Latency + (Math.random() - 0.5) * 80, 500, 2500),
-        errorRate: clamp(prev.errorRate + (Math.random() - 0.5) * 0.1, 0.01, 2.0),
-        cpuLoad: clamp(prev.cpuLoad + (Math.random() - 0.48) * 4, 20, 95),
-        memoryUsage: clamp(prev.memoryUsage + (Math.random() - 0.5) * 2, 40, 95)
-      }));
-    }, 800);
-    return () => clearInterval(interval);
-  }, []);
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
 
-  const handleLocationSelect = (loc: Coordinate) => {
-    if (mapMode === 'set-pickup') setPickup(loc);
-    if (mapMode === 'set-dropoff') setDropoff(loc);
-    setMapMode('navigate');
-  };
-
-  const handleBook = () => {
-    if (!pickup || !dropoff) return alert('Please set pickup and dropoff');
-    setIsBooking(true);
-    setActivityFeed(prev => [{
-      id: Date.now().toString(), type: "ride-requested" as RideStatus, 
-      message: 'Ride requested processing...', time: new Date().toLocaleTimeString()
-    }, ...prev].slice(0, 8));
-
-    setTimeout(() => {
-      setActivityFeed(prev => [{
-        id: Date.now().toString(), type: 'driver-assigned' as RideStatus, 
-        message: 'Driver found and en route', time: new Date().toLocaleTimeString()
-      }, ...prev].slice(0, 8));
-      setIsBooking(false);
-      setPickup(null);
-      setDropoff(null);
-    }, 2000);
-  };
+  useEffect(() => {
+    if (isSurging) {
+      surgeInterval.current = setInterval(() => {
+        setRequests((prev) => {
+          const next = Math.min(
+            100000,
+            prev + Math.floor(Math.random() * 4000),
+          );
+          if (next % 10000 < 4000)
+            addLog(
+              `Surge in progress: ${next.toLocaleString()} concurrent requests.`,
+            );
+          return next;
+        });
+      }, 500);
+    } else if (surgeInterval.current) clearInterval(surgeInterval.current);
+    return () => clearInterval(surgeInterval.current!);
+  }, [isSurging]);
 
   return (
-    <div className="w-full h-screen relative flex overflow-hidden">
-      <MapWrapper mapMode={mapMode} onLocationSelect={handleLocationSelect} pickup={pickup} dropoff={dropoff} />
+    <div className="w-full h-screen bg-base text-text overflow-hidden">
+      <MapWrapper concurrentRequests={requests} simulationKey={simulationKey} />
 
-      {/* Top Left Badge */}
-      <div className="fixed top-4 left-4 z-[900] flex items-center gap-3">
-        <div className="bg-surface/85 backdrop-blur-md border border-border rounded-xl px-4 py-2.5 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-accent/15 flex items-center justify-center">
-            <Route className="text-accent w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-sm font-semibold tracking-tight">RideFlow</div>
-            <div className="text-[10px] text-muted font-mono tracking-wider uppercase">Darmstadt</div>
-          </div>
+      <aside className="fixed right-0 top-0 h-full w-[400px] bg-surface/90 backdrop-blur-xl border-l border-border z-[1000] flex flex-col transition-transform">
+        <div className="p-6 flex-shrink-0">
+          <h2 className="text-xl font-bold text-accent flex items-center gap-2">
+            <Zap className="w-5 h-5 fill-accent" /> RideFlow HCMC
+          </h2>
+          <p className="text-[10px] text-muted font-mono uppercase tracking-widest mt-1">
+            Distributed Traffic Engine
+          </p>
         </div>
-      </div>
 
-      {/* Map Mode Banner */}
-      {mapMode !== 'navigate' && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[900]">
-          <div className="bg-surface/90 backdrop-blur-md border border-accent/30 rounded-xl px-5 py-3 flex items-center gap-3">
-            <Crosshair className="text-accent w-4 h-4 animate-pulse" />
-            <span className="text-sm text-text">Click on the map to set location</span>
-            <button onClick={() => setMapMode('navigate')} className="ml-2 text-muted hover:text-danger text-xs flex items-center">
-               <X className="w-3 h-3 mr-1"/> Cancel
+        <div className="flex-1 overflow-y-auto px-6 space-y-6 pb-6">
+          {/* Controls */}
+          <section className="space-y-3">
+            <div className="flex justify-between items-end font-mono">
+              <span className="text-[10px] text-muted uppercase">
+                Global Load
+              </span>
+              <span className="text-lg font-bold">
+                {requests.toLocaleString()} RPS
+              </span>
+            </div>
+            <input
+              type="range"
+              min="1000"
+              max="100000"
+              step="1000"
+              value={requests}
+              onChange={(e) => setRequests(Number(e.target.value))}
+              className="w-full accent-accent"
+            />
+            <button
+              onClick={() => {
+                setIsSurging(!isSurging);
+                addLog(
+                  isSurging
+                    ? "Surge manually terminated."
+                    : "WARNING: Surge detected in SGN region!",
+                );
+              }}
+              className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${isSurging ? "bg-danger/20 border border-danger text-danger" : "bg-orange-500 text-white"}`}
+            >
+              {isSurging ? (
+                <StopCircle className="w-4 h-4" />
+              ) : (
+                <Flame className="w-4 h-4" />
+              )}
+              {isSurging ? "STOP SURGE" : "TRIGGER SURGE"}
             </button>
-          </div>
-        </div>
-      )}
+          </section>
 
-      {/* Sidebar Toggle */}
-      <button 
-        onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="fixed top-4 z-[1001] transition-all duration-300"
-        style={{ right: sidebarOpen ? '396px' : '16px' }}
-      >
-        <div className="w-9 h-9 bg-surface/85 backdrop-blur-md border border-border rounded-lg flex items-center justify-center hover:bg-surface-light transition-colors">
-          {sidebarOpen ? <ChevronRight className="w-4 h-4 text-muted" /> : <ChevronLeft className="w-4 h-4 text-muted" />}
-        </div>
-      </button>
-
-      {/* Sidebar */}
-      <aside 
-        className={`fixed top-0 right-0 h-full z-[1000] w-[380px] bg-surface/92 backdrop-blur-xl border-l border-border flex flex-col transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}
-      >
-        <div className="px-5 pt-5 pb-4 border-b border-border">
-          <h2 className="text-base font-semibold">Book a Ride</h2>
-          <p className="text-xs text-muted mt-1">Configure your ride and track the system</p>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          {/* Controls Segment */}
-          <section>
-            <div className="text-[10px] font-mono text-muted uppercase tracking-wider mb-3">Vehicle Type</div>
-            <div className="flex gap-1 bg-surface-light rounded-lg p-1">
-              {(['economy', 'comfort', 'premium'] as const).map(type => (
-                <button 
-                  key={type}
-                  onClick={() => setVehicleType(type)}
-                  className={`flex-1 py-2 text-xs font-medium rounded-md capitalize flex items-center justify-center transition-all ${vehicleType === type ? 'bg-accent/15 text-accent' : 'text-muted hover:text-text'}`}
+          {/* Infrastructure */}
+          <section className="space-y-3">
+            <label className="text-[10px] font-mono uppercase text-muted flex items-center gap-2">
+              <Server className="w-3 h-3" /> Active Nodes
+            </label>
+            <div className="grid grid-cols-5 gap-2">
+              {nodes.map((node) => (
+                <button
+                  key={node.id}
+                  onClick={() => {
+                    setNodes((prev) =>
+                      prev.map((n) =>
+                        n.id === node.id ? { ...n, active: !n.active } : n,
+                      ),
+                    );
+                    addLog(
+                      `Node ${node.id} ${node.active ? "shutdown" : "started"}.`,
+                    );
+                  }}
+                  className={`h-10 rounded border transition-all ${node.active ? "bg-accent/10 border-accent text-accent" : "bg-surface-light border-border text-muted"}`}
                 >
-                  <CarIcon className="w-3 h-3 mr-1" /> {type}
+                  <span className="text-[10px] font-bold">{node.id}</span>
                 </button>
               ))}
             </div>
           </section>
 
-          <section>
-             <div className="text-[10px] font-mono text-muted uppercase tracking-wider mb-3">Route</div>
-             {/* Pickup Input */}
-             <div className="flex gap-2 mb-3">
-               <input readOnly value={pickup ? `${pickup.lat.toFixed(4)}, ${pickup.lng.toFixed(4)}` : ''} placeholder="Pickup Location" className="flex-1 bg-surface-light border border-border rounded-lg px-3 py-2 text-sm" />
-               <button onClick={() => setMapMode('set-pickup')} className="w-9 h-9 bg-surface-light border border-border rounded-lg flex items-center justify-center hover:text-accent text-muted"><MapPin className="w-4 h-4" /></button>
-             </div>
-             {/* Dropoff Input */}
-             <div className="flex gap-2">
-               <input readOnly value={dropoff ? `${dropoff.lat.toFixed(4)}, ${dropoff.lng.toFixed(4)}` : ''} placeholder="Dropoff Location" className="flex-1 bg-surface-light border border-border rounded-lg px-3 py-2 text-sm" />
-               <button onClick={() => setMapMode('set-dropoff')} className="w-9 h-9 bg-surface-light border border-border rounded-lg flex items-center justify-center hover:text-coral text-muted"><MapPinOff className="w-4 h-4" /></button>
-             </div>
+          {/* Network */}
+          <section className="space-y-4 pt-4 border-t border-border">
+            <div className="space-y-2">
+              <div className="flex justify-between text-[10px] font-mono text-muted">
+                <span>KAFKA BUS DELAY</span>
+                <span>{latencyKafka}ms</span>
+              </div>
+              <input
+                type="range"
+                min="5"
+                max="500"
+                value={latencyKafka}
+                onChange={(e) => setLatencyKafka(Number(e.target.value))}
+                className="w-full accent-sky"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-[10px] font-mono text-muted">
+                <span>DB REPLICATION LAG</span>
+                <span>{latencyDB}ms</span>
+              </div>
+              <input
+                type="range"
+                min="5"
+                max="1000"
+                value={latencyDB}
+                onChange={(e) => setLatencyDB(Number(e.target.value))}
+                className="w-full accent-gold"
+              />
+            </div>
           </section>
 
-          <section>
-            <div className="text-[10px] font-mono text-muted uppercase tracking-wider mb-3">Activity Feed</div>
-            <div className="space-y-2">
-              {activityFeed.map((act, i) => (
-                <div key={act.id} className={`flex items-start gap-2 text-sm ${i > 0 ? 'opacity-60' : ''}`}>
-                  <Info className="w-3 h-3 mt-1 text-accent shrink-0" />
-                  <div>
-                    <div className="text-text">{act.message}</div>
-                    <div className="text-[10px] text-muted font-mono">{act.time}</div>
-                  </div>
+          {/* Log Box */}
+          <section className="flex flex-col h-48 bg-black/40 border border-border rounded-lg overflow-hidden">
+            <div className="bg-surface-light px-3 py-1.5 border-b border-border flex items-center justify-between">
+              <span className="text-[9px] font-mono text-muted flex items-center gap-1.5">
+                <Terminal className="w-3 h-3" /> SYSTEM_LOGS
+              </span>
+              <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+            </div>
+            <div className="flex-1 p-3 font-mono text-[10px] space-y-1 overflow-y-auto overflow-x-hidden">
+              {logs.map((log) => (
+                <div key={log.id} className="flex gap-2">
+                  <span className="text-muted shrink-0">[{log.time}]</span>
+                  <span className="text-text break-words">{log.message}</span>
                 </div>
               ))}
-              {activityFeed.length === 0 && <div className="text-xs text-muted">Awaiting system events...</div>}
+              <div ref={logEndRef} />
             </div>
           </section>
         </div>
 
-        <div className="p-5 border-t border-border">
-          <button 
-            onClick={handleBook}
-            disabled={isBooking || !pickup || !dropoff}
-            className="w-full bg-accent hover:bg-accent-dim disabled:opacity-50 disabled:cursor-not-allowed text-base font-semibold py-3 rounded-xl text-surface flex items-center justify-center gap-2 transition-all"
+        <div className="p-6 border-t border-border bg-surface/50">
+          <button
+            onClick={() => {
+              setSimulationKey(Date.now());
+              addLog("Re-deploying clusters to HCMC neighborhoods.");
+            }}
+            className="w-full bg-accent hover:bg-accent-dim text-surface py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all"
           >
-            {isBooking ? <Zap className="w-4 h-4 animate-pulse" /> : <Send className="w-4 h-4" />}
-            {isBooking ? 'Processing...' : 'Book Ride'}
+            <Play className="w-4 h-4 fill-current" /> DEPLOY SYSTEM
           </button>
         </div>
       </aside>
 
-      {/* Benchmark Footer */}
-      <footer className="fixed bottom-0 left-0 right-0 z-[900] bg-surface/90 backdrop-blur-md border-t border-border h-16 flex items-stretch">
-        {[
-          { label: 'Active Rides', val: benchmarks.activeRides.toFixed(0) },
-          { label: 'Drivers', val: benchmarks.availableDrivers.toFixed(0) },
-          { label: 'Avg Latency (ms)', val: benchmarks.avgResponseTime.toFixed(0) },
-          { label: 'P99 (ms)', val: benchmarks.p99Latency.toFixed(0) },
-          { label: 'CPU Load', val: `${benchmarks.cpuLoad.toFixed(0)}%` },
-        ].map(stat => (
-          <div key={stat.label} className="flex-1 flex flex-col items-center justify-center border-r border-border/50 last:border-0">
-            <div className="text-[9px] font-mono text-muted uppercase tracking-wider">{stat.label}</div>
-            <div className="text-sm font-mono font-semibold text-text mt-0.5">{stat.val}</div>
+      <footer className="fixed bottom-0 left-0 right-0 h-16 bg-surface/95 backdrop-blur-md border-t border-border z-[900] flex items-center px-6 gap-8">
+        <div className="flex items-center gap-4 border-r border-border pr-8">
+          <div className="text-[10px] font-mono text-muted">REGION</div>
+          <div className="text-xs font-bold text-accent">VN-SGN-D1</div>
+        </div>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <Wifi className="w-4 h-4 text-sky" />
+            <span className="text-xs font-mono">{latencyKafka}ms</span>
           </div>
-        ))}
+          <div className="flex items-center gap-2">
+            <HardDrive className="w-4 h-4 text-gold" />
+            <span className="text-xs font-mono">{latencyDB}ms</span>
+          </div>
+        </div>
+        <div className="ml-auto text-[10px] font-mono text-muted uppercase">
+          Status: <span className="text-accent">Optimized</span> | Nodes:{" "}
+          <span className="text-text">
+            {nodes.filter((n) => n.active).length}/5
+          </span>
+        </div>
       </footer>
     </div>
   );
